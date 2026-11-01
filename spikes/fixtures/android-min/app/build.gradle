@@ -1,0 +1,8 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'com.example.app'
+    compileSdk 36
+    defaultConfig { minSdk 24; applicationId 'com.example.app' }
+    buildFeatures { buildConfig = true }
+}
+dependencies { implementation project(':lib') }

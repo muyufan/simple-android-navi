@@ -1,0 +1,14 @@
+node_modules/
+out/
+*.vsix
+
+# Spike workspaces, downloaded toolchains and SDK jars: machine-local, hundreds of MB.
+spikes/tmp/
+spikes/tools/
+spikes/fixtures/androidjar/libs/*.jar
+
+# Fixture build outputs and machine-local SDK paths.
+spikes/fixtures/**/build/
+spikes/fixtures/**/.gradle/
+**/local.properties
+spikes/fixtures/**/bin/

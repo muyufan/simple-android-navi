@@ -1,0 +1,83 @@
+// S2 spike: can an init script alone extract the per-variant AGP classpath?
+import groovy.json.JsonOutput
+
+def collected = []
+
+gradle.projectsEvaluated {
+    gradle.rootProject.allprojects.each { p ->
+        def android = p.extensions.findByName('android')
+        if (android != null) {
+            def sets = []
+            try { sets.add(android.applicationVariants) } catch (Throwable ignored) { }
+            try { sets.add(android.libraryVariants) } catch (Throwable ignored) { }
+            sets.each { set ->
+                set.each { v ->
+                    collected.add([proj: p, v: v])
+                }
+            }
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    gradle.rootProject.tasks.register('dumpAndroidNaviModel') {
+        group = 'android-navi'
+        doLast {
+            def entries = []
+            collected.each { rec ->
+                def p = rec.proj
+                def v = rec.v
+                def e = [:]
+                e.project = p.path
+                e.variant = v.name
+                def android = p.extensions.findByName('android')
+                try {
+                    def bc = []
+                    android.bootClasspath.each { f -> bc.add(f.toString()) }
+                    e.bootClasspath = bc
+                } catch (Throwable t) {
+                    e.bootClasspathError = t.toString()
+                }
+                try {
+                    def cp = []
+                    v.getCompileConfiguration().resolve().each { f -> cp.add(f.toString()) }
+                    e.compileClasspath = cp
+                } catch (Throwable t1) {
+                    try {
+                        def cp = []
+                        v.javaCompileProvider.get().classpath.files.each { f -> cp.add(f.toString()) }
+                        e.compileClasspath = cp
+                    } catch (Throwable t2) {
+                        e.compileClasspathError = t1.toString() + ' | ' + t2.toString()
+                    }
+                }
+                try {
+                    def sd = []
+                    v.sourceSets.each { s -> s.java.srcDirs.each { d -> sd.add(d.toString()) } }
+                    e.sourceDirs = sd.unique()
+                } catch (Throwable t) {
+                    e.sourceDirsError = t.toString()
+                }
+                try {
+                    def buildDir = p.layout.buildDirectory.get().asFile
+                    def rjars = []
+                    if (buildDir.exists()) {
+                        buildDir.eachFileRecurse { f ->
+                            if (f.name == 'R.jar') { rjars.add(f.toString()) }
+                        }
+                    }
+                    e.rJars = rjars
+                } catch (Throwable t) {
+                    e.rJarsError = t.toString()
+                }
+                entries.add(e)
+            }
+            def model = [generatedAt: new Date().toString(), gradle: gradle.gradleVersion, entries: entries]
+            def f = new File(gradle.rootProject.projectDir, 'build/android-navi-model.json')
+            f.parentFile.mkdirs()
+            f.text = JsonOutput.prettyPrint(JsonOutput.toJson(model))
+            println 'ANDROID_NAVI_MODEL=' + f.absolutePath
+            println 'ANDROID_NAVI_ENTRIES=' + entries.size()
+        }
+    }
+}

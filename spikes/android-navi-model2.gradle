@@ -1,0 +1,88 @@
+// Production-shaped model dump (validated variant of the S2 spike).
+// Registered via pluginManager.withPlugin, providers resolved at execution time,
+// dump task dependsOn the variant compile task (generated sources are task-output-backed).
+import org.gradle.api.Action
+import groovy.json.JsonOutput
+
+def variants = []
+
+gradle.beforeProject { p ->
+    ['com.android.application', 'com.android.library'].each { pluginId ->
+        p.pluginManager.withPlugin(pluginId) {
+            def ac = p.extensions.findByName('androidComponents')
+            if (ac == null) { return }
+            ac.onVariants(ac.selector().all(), { variant ->
+                variants.add([
+                    project     : p,
+                    path        : p.path,
+                    name        : variant.name,
+                    javaSources : variant.sources.java == null ? null : variant.sources.java.all,
+                    compileCp   : variant.compileConfiguration,
+                ])
+            } as Action)
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    def root = gradle.rootProject
+    root.tasks.register('dumpAndroidNaviModel') {
+        group = 'android-navi'
+        // generated source dirs are task-output-backed: they must be produced in THIS build
+        dependsOn variants.collect { v ->
+            def cap = v.name.substring(0, 1).toUpperCase() + v.name.substring(1)
+            v.project.tasks.named("compile${cap}JavaWithJavac")
+        }
+        doLast {
+            def moduleDirs = [:]
+            root.allprojects.each { p -> moduleDirs[p.path] = p.projectDir.absolutePath }
+
+            def entries = []
+            variants.each { v ->
+                def e = [project: v.path, variant: v.name]
+                try { e.bootClasspath = v.project.extensions.findByName('android')?.bootClasspath?.collect { it.absolutePath } ?: [] } catch (Throwable t) { e.bootError = t.toString() }
+                try { e.javaSources = v.javaSources == null ? [] : v.javaSources.get().collect { it.asFile.absolutePath } } catch (Throwable t) { e.javaSourcesError = t.toString() }
+                try {
+                    def view = v.compileCp.incoming.artifactView { av ->
+                        av.attributes.attribute(org.gradle.api.attributes.Attribute.of('artifactType', String), 'android-classes-jar')
+                        av.lenient = true
+                    }
+                    e.compileClasspath = view.files.files.collect { it.absolutePath }
+                    def rView = v.compileCp.incoming.artifactView { av ->
+                        av.attributes.attribute(org.gradle.api.attributes.Attribute.of('artifactType', String), 'r-class-jar')
+                        av.lenient = true
+                    }
+                    e.rClassJars = rView.files.files.collect { it.absolutePath }
+                } catch (Throwable t) {
+                    def chain = []
+                    def c = t
+                    while (c != null && chain.size() < 6) { chain.add(c.toString()); c = c.cause }
+                    e.compileClasspathError = chain.join('  <<  ')
+                }
+
+                // split out sibling-module build outputs: those become Eclipse project refs, not libs
+                def ownBuildDir = v.project.layout.buildDirectory.get().asFile.absolutePath.replace('\\', '/')
+                def projectRefs = []
+                def libs = []
+                (e.compileClasspath ?: []).each { path ->
+                    def norm = path.replace('\\', '/')
+                    def otherModule = moduleDirs.find { entry -> entry.key != v.path && norm.startsWith(entry.value.replace('\\', '/') + '/build/') }
+                    if (otherModule != null) {
+                        projectRefs.add([path: otherModule.key, file: path])
+                    } else {
+                        libs.add(path)
+                    }
+                }
+                e.projectRefs = projectRefs
+                e.libs = libs
+                entries.add(e)
+            }
+
+            def model = [generatedAt: new Date().toString(), gradle: gradle.gradleVersion, entries: entries]
+            def f = new File(root.projectDir, 'build/android-navi-model.json')
+            f.parentFile.mkdirs()
+            f.text = JsonOutput.prettyPrint(JsonOutput.toJson(model))
+            println 'ANDROID_NAVI_MODEL=' + f.absolutePath
+        }
+    }
+}

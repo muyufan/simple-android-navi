@@ -1,0 +1,97 @@
+{
+  "name": "android-navi",
+  "displayName": "Android Navi",
+  "description": "Android Studio-like code navigation for Android Gradle projects: gives redhat.java (JDT LS) the correct AGP classpath.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "extensionDependencies": [
+    "redhat.java"
+  ],
+  "activationEvents": [
+    "workspaceContains:settings.gradle",
+    "workspaceContains:settings.gradle.kts",
+    "onCommand:androidNavi.sync"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "androidNavi.sync",
+        "title": "Sync Android Classpath",
+        "category": "Android Navi"
+      },
+      {
+        "command": "androidNavi.reloadJavaModel",
+        "title": "Reload Java Model (restart JDT LS)",
+        "category": "Android Navi"
+      },
+      {
+        "command": "androidNavi.showOutput",
+        "title": "Show Output",
+        "category": "Android Navi"
+      },
+      {
+        "command": "androidNavi.cancelSync",
+        "title": "Cancel Sync",
+        "category": "Android Navi"
+      },
+      {
+        "command": "androidNavi.restoreJavaSettings",
+        "title": "Restore Java Settings (before uninstalling)",
+        "category": "Android Navi"
+      }
+    ],
+    "configuration": {
+      "title": "Android Navi",
+      "properties": {
+        "androidNavi.variant": {
+          "type": "string",
+          "default": "debug",
+          "description": "Build variant to model (must exist in every module)."
+        },
+        "androidNavi.extraGradleArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra arguments appended to the Gradle invocation."
+        },
+        "androidNavi.syncOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run a sync when a workspace folder is opened."
+        },
+        "androidNavi.gradleTimeoutMinutes": {
+          "type": "number",
+          "default": 20,
+          "minimum": 0,
+          "description": "Stop a sync that runs longer than this many minutes (0 = no limit). The first sync compiles the selected variant, so it can take a while."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc --noEmit && node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "build:verify": "esbuild src/model.ts --bundle --platform=node --format=cjs --outfile=out/verify-model.cjs",
+    "verify": "npm run build:verify && node scripts/verify.mjs",
+    "vscode:prepublish": "npm run compile",
+    "package:vsix": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0"
+  }
+}

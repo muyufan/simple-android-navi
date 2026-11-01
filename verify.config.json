@@ -1,0 +1,23 @@
+{
+  "project": "D:/code/android/workspace/termux-app-master",
+  "variant": "debug",
+  "assertions": [
+    {
+      "label": "android.jar definition (platform class)",
+      "file": "app/src/main/java/com/termux/app/terminal/TermuxSessionsListViewController.java",
+      "line": 51,
+      "char": 10,
+      "expect": "jdt://",
+      "expectIncludes": "android.jar",
+      "expectDiagnosticsClean": true
+    },
+    {
+      "label": "cross-module definition (project class to source)",
+      "file": "app/src/main/java/com/termux/app/terminal/TermuxSessionsListViewController.java",
+      "line": 53,
+      "char": 10,
+      "expect": "file:",
+      "expectIncludes": "terminal-emulator/src/main/java"
+    }
+  ]
+}

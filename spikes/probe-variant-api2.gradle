@@ -1,0 +1,27 @@
+import org.gradle.api.Action
+
+def collected = []
+
+gradle.beforeProject { p ->
+    ['com.android.application', 'com.android.library'].each { pluginId ->
+        p.pluginManager.withPlugin(pluginId) {
+            def ac = p.extensions.findByName('androidComponents')
+            if (ac == null) { println "AC-MISSING on " + p.path; return }
+            ac.onVariants(ac.selector().all(), { variant ->
+                def rec = [path: p.path, name: variant.name]
+                try { rec.javaSrc = variant.sources.java.all.get().collect { d -> d.asFile.toString() } } catch (Throwable t) { rec.javaSrcErr = t.toString() }
+                try { rec.cpCount = variant.compileConfiguration.get().resolve().size() } catch (Throwable t) { rec.cpErr = t.toString() }
+                collected.add(rec)
+            } as Action)
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    gradle.rootProject.tasks.register('probeVariantApi2') {
+        doLast {
+            println 'AC-COUNT=' + collected.size()
+            collected.each { r -> println "AC-V=${r.path}:${r.name} cp=${r.cpCount} src=${(r.javaSrc ?: [r.javaSrcErr]).join(' | ')}" }
+        }
+    }
+}

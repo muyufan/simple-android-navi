@@ -1,0 +1,4 @@
+println "MIN-INIT-OK gradle=" + gradle.gradleVersion
+gradle.projectsEvaluated {
+    println "ROOT=" + gradle.rootProject.name
+}

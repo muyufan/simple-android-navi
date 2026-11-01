@@ -1,0 +1,39 @@
+import org.gradle.api.Action
+
+def variants = []
+
+gradle.beforeProject { p ->
+    ['com.android.application', 'com.android.library'].each { pluginId ->
+        p.pluginManager.withPlugin(pluginId) {
+            def ac = p.extensions.findByName('androidComponents')
+            if (ac == null) return
+            ac.onVariants(ac.selector().all(), { variant ->
+                // capture PROVIDERS only; resolve at execution time
+                variants.add([
+                    path: p.path,
+                    name: variant.name,
+                    javaSrc: variant.sources.java == null ? null : variant.sources.java.all,
+                    compileCp: variant.compileConfiguration,
+                ])
+            } as Action)
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    gradle.rootProject.tasks.register('dumpModel3') {
+        doLast {
+            def entries = []
+            variants.each { v ->
+                def e = [path: v.path, name: v.name]
+                try { e.javaSrc = v.javaSrc == null ? [] : v.javaSrc.get().collect { d -> d.asFile.toString() } } catch (Throwable t) { e.javaSrcErr = t.toString() }
+                try { e.cp = v.compileCp.get().resolve().collect { f -> f.toString() } } catch (Throwable t) { e.cpErr = t.toString() }
+                entries.add(e)
+            }
+            def f = new File(gradle.rootProject.projectDir, 'build/android-navi-model3.json')
+            f.parentFile.mkdirs()
+            f.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(entries))
+            println 'DUMP3=' + f.absolutePath
+        }
+    }
+}

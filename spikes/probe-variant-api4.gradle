@@ -1,0 +1,48 @@
+import org.gradle.api.Action
+
+def variants = []
+
+gradle.beforeProject { p ->
+    ['com.android.application', 'com.android.library'].each { pluginId ->
+        p.pluginManager.withPlugin(pluginId) {
+            def ac = p.extensions.findByName('androidComponents')
+            if (ac == null) return
+            ac.onVariants(ac.selector().all(), { variant ->
+                variants.add([
+                    project: p,
+                    path: p.path,
+                    name: variant.name,
+                    javaSrc: variant.sources.java == null ? null : variant.sources.java.all,
+                    compileCp: variant.compileConfiguration,
+                ])
+            } as Action)
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    gradle.rootProject.tasks.register('dumpModel4') {
+        doLast {
+            def entries = []
+            variants.each { v ->
+                if (v.path != ':app' || v.name != 'debug') return
+                def e = [path: v.path, name: v.name]
+                try { e.javaSrc = v.javaSrc == null ? [] : v.javaSrc.get().collect { d -> d.asFile.toString() } } catch (Throwable t) { e.javaSrcErr = t.toString() }
+                try { e.cp = v.compileCp.resolve().collect { f -> f.toString() } } catch (Throwable t) { e.cpErr = t.toString() }
+                entries.add(e)
+            }
+            def f = new File(gradle.rootProject.projectDir, 'build/android-navi-model4.json')
+            f.parentFile.mkdirs()
+            f.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(entries))
+            println 'DUMP4=' + f.absolutePath
+        }
+    }
+    // make the dump run AFTER the compile task in the same build
+    gradle.rootProject.allprojects.each { p ->
+        def t = p.tasks.findByName('dumpModel4')
+        if (t != null) return
+    }
+    gradle.rootProject.tasks.named('dumpModel4').configure {
+        dependsOn gradle.rootProject.findProject(':app').tasks.named('compileDebugJavaWithJavac')
+    }
+}

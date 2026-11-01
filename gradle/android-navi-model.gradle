@@ -1,0 +1,130 @@
+// Android Navi — model dump init script.
+//
+// Invoked by the extension as:
+//   ./gradlew --init-script <this file> --no-configuration-cache androidNaviModel
+// Never edits the user's build files.
+//
+// Why an init script + a task that depends on the compile tasks:
+//   AGP's generated source directories (BuildConfig) are task-output-backed; asking for them
+//   before `compile<Variant>JavaWithJavac` has run *in the same build* throws
+//   "Querying the mapped value ... before task ':app:generateDebugBuildConfig' has completed".
+//   The same build is also what materialises R.jar and sibling-module classes.jar.
+import groovy.json.JsonOutput
+import org.gradle.api.Action
+
+def collected = []
+
+// Generated source dirs (BuildConfig, ...) are only reachable through androidComponents;
+// the legacy getSourceFolders() throws "Unknown SourceKind value: null" on AGP 8.13.
+def generatedSources = [:]
+
+gradle.beforeProject { p ->
+    ['com.android.application', 'com.android.library'].each { pluginId ->
+        p.pluginManager.withPlugin(pluginId) {
+            def ac = p.extensions.findByName('androidComponents')
+            if (ac == null) {
+                return
+            }
+            ac.onVariants(ac.selector().all(), { variant ->
+                generatedSources[p.path + ':' + variant.name] =
+                        variant.sources.java == null ? null : variant.sources.java.all
+            } as Action)
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    gradle.rootProject.allprojects.each { p ->
+        def android = p.extensions.findByName('android')
+        if (android == null) {
+            return
+        }
+        def sets = []
+        try { sets.add(android.applicationVariants) } catch (Throwable ignored) { }
+        try { sets.add(android.libraryVariants) } catch (Throwable ignored) { }
+        sets.each { set ->
+            set.each { v ->
+                collected.add([proj: p, variant: v, android: android])
+            }
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    def root = gradle.rootProject
+
+    // The variant's own build outputs must exist and be produced in THIS build.
+    def compileTasks = []
+    collected.each { rec ->
+        def cap = rec.variant.name.substring(0, 1).toUpperCase() + rec.variant.name.substring(1)
+        try { compileTasks.add(rec.proj.tasks.named("compile${cap}JavaWithJavac")) } catch (Throwable ignored) { }
+    }
+
+    root.tasks.register('androidNaviModel') {
+        group = 'android-navi'
+        dependsOn compileTasks
+        doLast {
+            def moduleDirs = [:]
+            root.allprojects.each { p -> moduleDirs[p.path] = p.projectDir.absolutePath.replace('\\', '/') }
+
+            def entries = []
+            collected.each { rec ->
+                def p = rec.proj
+                def v = rec.variant
+                def e = [project: p.path, variant: v.name, moduleDir: moduleDirs[p.path]]
+                try { e.buildType = v.buildType?.name } catch (Throwable ignored) { }
+                try { e.bootClasspath = rec.android.bootClasspath.collect { it.absolutePath } } catch (Throwable t) { e.bootClasspathError = t.toString() }
+
+                def cp = []
+                try {
+                    // The javac task's own classpath: AGP has already done the artifact selection,
+                    // so this is complete (own R.jar, sibling classes.jar, AAR jars) and unambiguous.
+                    v.javaCompileProvider.get().classpath.files.each { f -> cp.add(f.absolutePath) }
+                    e.classpathSource = 'javacTask'
+                } catch (Throwable t) {
+                    def chain = []
+                    def c = t
+                    while (c != null && chain.size() < 4) { chain.add(c.toString()); c = c.cause }
+                    e.compileClasspathError = chain.join('  <<  ')
+                    try { v.getCompileConfiguration().resolve().each { f -> cp.add(f.absolutePath) }; e.classpathSource = 'legacyConfig' } catch (Throwable ignored) { }
+                }
+
+                // Sibling module build outputs become Eclipse project references, not libraries:
+                // a classes.jar on the classpath makes go-to-definition land in bytecode.
+                def projectRefs = []
+                def libs = []
+                cp.each { path ->
+                    def norm = path.replace('\\', '/')
+                    def owner = moduleDirs.find { entry ->
+                        entry.key != p.path && norm.startsWith(entry.value + '/build/')
+                    }
+                    if (owner != null) {
+                        projectRefs.add([project: owner.key, file: path])
+                    } else {
+                        libs.add(path)
+                    }
+                }
+                e.projectRefs = projectRefs
+                e.libs = libs
+
+                def srcDirs = new LinkedHashSet()
+                try { v.sourceSets.each { s -> s.java.srcDirs.each { d -> srcDirs.add(d.absolutePath) } } } catch (Throwable t) { e.sourceSetsError = t.toString() }
+                try {
+                    def provider = generatedSources[p.path + ':' + v.name]
+                    if (provider != null) {
+                        provider.get().each { d -> srcDirs.add(d.asFile.absolutePath) }
+                    }
+                } catch (Throwable t) { e.generatedSourcesError = t.toString() }
+                e.sourceDirs = srcDirs.toList()
+
+                entries.add(e)
+            }
+
+            def model = [generatedAt: new Date().toString(), gradle: gradle.gradleVersion, entries: entries]
+            def out = new File(root.projectDir, 'build/android-navi-model.json')
+            out.parentFile.mkdirs()
+            out.text = JsonOutput.prettyPrint(JsonOutput.toJson(model))
+            println 'ANDROID_NAVI_MODEL=' + out.absolutePath
+        }
+    }
+}

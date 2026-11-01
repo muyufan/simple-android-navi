@@ -1,0 +1,19 @@
+# Sources and dev-only files. `out/` is in .gitignore, but this file replaces .gitignore for vsce,
+# so the bundled extension in out/extension.js stays in the package.
+src/**
+spikes/**
+scripts/**
+.vscode/**
+node_modules/**
+out/verify-jdtls/**
+out/verify-*
+out/model-test.cjs
+out/*.map
+**/*.ts
+tsconfig.json
+esbuild.mjs
+package-lock.json
+verify.config.json
+NOTES.md
+.gitignore
+*.vsix

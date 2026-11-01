@@ -1,0 +1,33 @@
+gradle.projectsEvaluated {
+    gradle.rootProject.tasks.register('probeVariantApi') {
+        doLast {
+            def p = gradle.rootProject.findProject(':app')
+            def android = p.extensions.findByName('android')
+            // 1) legacy variant object surface
+            def v = android.applicationVariants.find { it.name == 'debug' }
+            println 'LEGACY-CLASS=' + v.getClass().name
+            println 'LEGACY-METHODS=' + v.getClass().methods.collect { it.name }.unique().findAll { n ->
+                def l = n.toLowerCase(); l.contains('source') || l.contains('generat') || l.contains('output') || l.contains('dir')
+            }.sort().join(',')
+            // 2) androidComponents reflection path (no AGP classes on init-script classpath)
+            try {
+                def ac = p.extensions.findByName('androidComponents')
+                def sel = ac.selector().all()
+                def action = { variant ->
+                    println 'AC-VARIANT=' + variant.name
+                    try {
+                        def javas = variant.sources.java
+                        def all = javas.all.get()
+                        println 'AC-JAVA-SRC=' + all.collect { it.asFile.toString() }.join(' | ')
+                    } catch (Throwable t) { println 'AC-JAVA-SRC-ERR=' + t }
+                    try {
+                        println 'AC-COMPILE-CP-COUNT=' + variant.compileConfiguration.get().resolve().size()
+                    } catch (Throwable t) { println 'AC-COMPILE-CP-ERR=' + t }
+                } as org.gradle.api.Action
+                ac.onVariants(sel, action)
+            } catch (Throwable t) {
+                println 'AC-ERR=' + t
+            }
+        }
+    }
+}

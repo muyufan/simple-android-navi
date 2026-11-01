@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Android Navi on an Android project",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${input:androidProject}"
+      ],
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "preLaunchTask": "npm: compile"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "androidProject",
+      "type": "promptString",
+      "description": "Folder of the Android project to open (must contain settings.gradle)",
+      "default": "D:/code/android/workspace/termux-app-master"
+    }
+  ]
+}
